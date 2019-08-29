@@ -2,5 +2,25 @@
     "name": "Calendar Breakout",
     "version": "1.0",
     "description": "Too many meetings? No problem!",
-    "manifest_version": 2
+    "manifest_version": 2,
+    "permissions": [
+        "declarativeContent"
+    ],
+    "background": {
+        "scripts": [
+            "background.js"
+        ],
+        "persistent": false
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://calendar.google.com/*"
+            ],
+            "js": [
+                "contentScript.js"
+            ]
+        }
+    ],
+    "page_action": {}
 }
