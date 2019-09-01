@@ -11,6 +11,7 @@ class Game {
     constructor(gameViewport) {
         this.gameViewport = gameViewport;
         this.viewportRect = gameViewport.getBoundingClientRect();
+        this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false);
         this.installed = false;
         this.lastTimestamp = null;
     }
@@ -24,7 +25,7 @@ class Game {
         this.ball.install();
         this.installed = true;
 
-        this.update();
+        requestAnimationFrame(ts => this.update(ts));
     }
 
     update(timestamp) {
@@ -35,12 +36,7 @@ class Game {
             this.lastTimestamp = timestamp;
         }
 
-        this.ball.update(this.viewportRect, this.bricks);
-        // for (const brick of this.bricks) {
-        //     if (this.ball.collidesWith(brick.rect)) {
-        //         brick.hide();
-        //     }
-        // }
+        this.ball.update(this.viewportEdges, this.bricks);
         this.ball.render();
     }
 
@@ -61,19 +57,7 @@ class Brick {
     constructor(domElement, rect) {
         this.domElement = domElement;
         this.rect = rect;
-        this.edges = [{
-            ends: [{ x: rect.left, y: rect.top }, { x: rect.right - 1, y: rect.top }],
-            normal: { x: 0, y: -1 },
-        }, {
-            ends: [{ x: rect.right - 1, y: rect.top }, { x: rect.right - 1, y: rect.bottom - 1 }],
-            normal: { x: 1, y: 0 },
-        }, {
-            ends: [{ x: rect.right - 1, y: rect.bottom - 1 }, { x: rect.left, y: rect.bottom - 1 }],
-            normal: { x: 0, y: 1 },
-        }, {
-            ends: [{ x: rect.left, y: rect.bottom - 1 }, { x: rect.left, y: rect.top }],
-            normal: { x: -1, y: 0 },
-        }];
+        this.edges = rectEdges(rect, /* convex = */ true);
     }
 
     /**
@@ -95,6 +79,23 @@ class Brick {
     show() {
         this.domElement.style.display = '';
     }
+}
+
+function rectEdges(rect, convex) {
+    const normalMultiplier = convex ? 1 : -1;
+    return [{
+        ends: [{ x: rect.left, y: rect.top }, { x: rect.right - 1, y: rect.top }],
+        normal: numMulVec(normalMultiplier, { x: 0, y: -1 }),
+    }, {
+        ends: [{ x: rect.right - 1, y: rect.top }, { x: rect.right - 1, y: rect.bottom - 1 }],
+        normal: numMulVec(normalMultiplier, { x: 1, y: 0 }),
+    }, {
+        ends: [{ x: rect.right - 1, y: rect.bottom - 1 }, { x: rect.left, y: rect.bottom - 1 }],
+        normal: numMulVec(normalMultiplier, { x: 0, y: 1 }),
+    }, {
+        ends: [{ x: rect.left, y: rect.bottom - 1 }, { x: rect.left, y: rect.top }],
+        normal: numMulVec(normalMultiplier, { x: -1, y: 0 }),
+    }];
 }
 
 class Ball {
@@ -119,8 +120,9 @@ class Ball {
         this.domElement.remove();
     }
 
-    update(viewportRect, bricks) {
+    update(viewportEdges, bricks) {
         bricks = [...bricks];
+        viewportEdges = [...viewportEdges];
         let currentCenter = this.center;
         let targetVelocity = this.velocity;
         let destination = addVec(currentCenter, this.velocity);
@@ -129,51 +131,85 @@ class Ball {
         while (processAllBricks) {
             numCycles++;
             processAllBricks = false;
+            let closestBrick = null;
+            let closestEdge = null;
+            let closestDistance = Infinity;
+            let closestBrickIndex = -1;
+            let closestViewportEdgeIndex = -1;
+            let closestIntersectionPoint = null;
             bricks.forEach((brick, brickIndex) => {
                 if (!brick) {
                     return;
                 }
+                // Yeah, I know. Extremely inefficient. Will optimize later if needed.
                 for (const edge of brick.edges) {
+                    if (dotProduct(edge.normal, targetVelocity) >= 0) {
+                        continue;
+                    }
                     const intersectionPoint = findIntersectionPoint(
                         edge.ends[0], edge.ends[1], currentCenter, destination);
-                    if (intersectionPoint) {
-                        // if (numCycles > 1) {
-                        //     console.log(`Collision in cycle ${numCycles}`);
-                        // }
+                    if (!intersectionPoint) {
+                        continue;
+                    }
+                    const distanceToIntersection = distance(currentCenter, intersectionPoint);
+                    if (distanceToIntersection < closestDistance) {
+                        if (numCycles > 1) {
+                            console.log(`Collision in cycle ${numCycles}`);
+                        }
                         processAllBricks = true;
-                        bricks[brickIndex] = null;
-                        currentCenter = intersectionPoint;
-                        //console.log(intersectionPoint);
-                        //debugDotAt(intersectionPoint);
-                        const remainingVector = subtractPoints(destination, intersectionPoint);
-                        //console.log('Remaining', remainingVector);
-                        const reflectedRemainingVector = bounceVector(remainingVector, edge.normal);
-                        targetVelocity = bounceVector(targetVelocity, edge.normal);
-                        destination = addVec(reflectedRemainingVector, intersectionPoint);
-                        // console.log(remainingVector, reflectedRemainingVector, destination);
+                        closestBrickIndex = brickIndex;
+                        closestEdge = edge;
+                        closestDistance = distanceToIntersection;
+                        closestIntersectionPoint = intersectionPoint;
                     }
                 }
             });
-            this.center = destination;
-            this.velocity = targetVelocity;
+            viewportEdges.forEach((edge, edgeIndex) => {
+                if (!edge) {
+                    return;
+                }
+                if (dotProduct(edge.normal, targetVelocity) >= 0) {
+                    return;
+                }
+                const intersectionPoint = findIntersectionPoint(
+                    edge.ends[0], edge.ends[1], currentCenter, destination);
+                if (!intersectionPoint) {
+                    return;
+                }
+                const distanceToIntersection = distance(currentCenter, intersectionPoint);
+                if (distanceToIntersection < closestDistance) {
+                    if (numCycles > 1) {
+                        console.log(`Collision in cycle ${numCycles}`);
+                    }
+                    processAllBricks = true;
+                    closestBrickIndex = -1;
+                    closestViewportEdgeIndex = edgeIndex;
+                    closestEdge = edge;
+                    closestDistance = distanceToIntersection;
+                    closestIntersectionPoint = intersectionPoint;
+                }
+            });
+            if (closestBrickIndex !== -1) {
+                bricks[closestBrickIndex] = null;  // Don't process the same brick twice.
+            } else if (closestViewportEdgeIndex !== -1) {
+                viewportEdges[closestViewportEdgeIndex] = null;
+            }
+
+            if (closestEdge) {
+                currentCenter = closestIntersectionPoint;
+                //console.log(closestIntersectionPoint);
+                //debugDotAt(closestIntersectionPoint);
+                const remainingVector = subtractPoints(destination, closestIntersectionPoint);
+                //console.log('Remaining', remainingVector);
+                const reflectedRemainingVector = bounceVector(remainingVector, closestEdge.normal);
+                targetVelocity = bounceVector(targetVelocity, closestEdge.normal);
+                destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
+                // console.log(remainingVector, reflectedRemainingVector, destination);
+            }
         }
 
-        if (this.center.x < viewportRect.left) {
-            this.center.x = viewportRect.left;
-            this.velocity.x = -this.velocity.x;
-        }
-        if (this.center.x >= viewportRect.right) {
-            this.center.x = viewportRect.right - 1;
-            this.velocity.x = -this.velocity.x;
-        }
-        if (this.center.y < viewportRect.top) {
-            this.center.y = viewportRect.top;
-            this.velocity.y = -this.velocity.y;
-        }
-        if (this.center.y >= viewportRect.bottom) {
-            this.center.y = viewportRect.bottom - 1;
-            this.velocity.y = -this.velocity.y;
-        }
+        this.center = destination;
+        this.velocity = targetVelocity;
     }
 
     render() {
@@ -191,6 +227,10 @@ class Ball {
     collisionVector(normal) {
 
     }
+}
+
+function distance(p, q) {
+    return Math.sqrt(p.x * p.x + p.y * p.y)
 }
 
 function bounceVector(v, normal) {
