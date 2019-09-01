@@ -20,8 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Source: https://github.com/pgkelley4/line-segments-intersect
-
 /**
  * @author Peter Kelley
  * @author pgkelley4@gmail.com
@@ -41,7 +39,7 @@
  * @param {Object} q2 point object with x and y coordinates
  *  representing the end of the 2nd line.
  */
-function doLineSegmentsIntersect(p, p2, q, q2) {
+function findIntersectionPoint(p, p2, q, q2) {
 	var r = subtractPoints(p2, p);
 	var s = subtractPoints(q2, q);
 
@@ -52,31 +50,38 @@ function doLineSegmentsIntersect(p, p2, q, q2) {
 		// They are coLlinear
 		
 		// Do they touch? (Are any of the points equal?)
-		if (equalPoints(p, q) || equalPoints(p, q2) || equalPoints(p2, q) || equalPoints(p2, q2)) {
-			return true
+		if (equalPoints(p, q) || equalPoints(p, q2)) {
+			return p;
+		}
+		if (equalPoints(p2, q) || equalPoints(p2, q2)) {
+			return p2;
 		}
 		// Do they overlap? (Are all the point differences in either direction the same sign)
-		return !allEqual(
-				(q.x - p.x < 0),
-				(q.x - p2.x < 0),
-				(q2.x - p.x < 0),
-				(q2.x - p2.x < 0)) ||
-			!allEqual(
-				(q.y - p.y < 0),
-				(q.y - p2.y < 0),
-				(q2.y - p.y < 0),
-				(q2.y - p2.y < 0));
+		// return !allEqual(
+		// 		(q.x - p.x < 0),
+		// 		(q.x - p2.x < 0),
+		// 		(q2.x - p.x < 0),
+		// 		(q2.x - p2.x < 0)) ||
+		// 	!allEqual(
+		// 		(q.y - p.y < 0),
+		// 		(q.y - p2.y < 0),
+		// 		(q2.y - p.y < 0),
+		// 		(q2.y - p2.y < 0));
+		return null;
 	}
 
 	if (denominator == 0) {
 		// lines are paralell
-		return false;
+		return null;
 	}
 
 	var u = uNumerator / denominator;
 	var t = crossProduct(subtractPoints(q, p), s) / denominator;
 
-	return (t >= 0) && (t <= 1) && (u >= 0) && (u <= 1);
+	if ((t >= 0) && (t <= 1) && (u >= 0) && (u <= 1)) {
+		return {x: p.x + t * r.x, y: p.y + t * r.y};
+	}
+	return null;
 }
 
 /**

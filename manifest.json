@@ -8,8 +8,6 @@
     ],
     "background": {
         "scripts": [
-            "line-segments-intersect.js",
-            "circles-bouncing-off-lines.js",
             "background.js"
         ],
         "persistent": false
@@ -20,6 +18,7 @@
                 "*://calendar.google.com/*"
             ],
             "js": [
+                "line-segments-intersect.js",
                 "contentScript.js"
             ]
         }
