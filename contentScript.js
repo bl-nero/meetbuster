@@ -153,8 +153,6 @@ class Ball {
     }
 
     update(viewportEdges, bricks) {
-        bricks = [...bricks];
-        viewportEdges = [...viewportEdges];
         let currentCenter = this.center;
         let targetVelocity = this.velocity;
         let destination = addVec(currentCenter, this.velocity);
@@ -162,6 +160,9 @@ class Ball {
         let numCycles = 0;
         while (processAllBricks) {
             numCycles++;
+            if (numCycles > 20) {
+                console.log(`Cycle ${numCycles}!`);
+            }
             processAllBricks = false;
             let closestBrick = null;
             let closestEdge = null;
@@ -205,6 +206,7 @@ class Ball {
                     }
                     // XXX: Everything bellow is bullshit, basically.
                     cornerNormal = subtractPoints(intersectionPoint, corner.center);
+                    checkForNaNVec(cornerNormal);
                     if (dotProduct(cornerNormal, targetVelocity) >= 0) {
                         continue;
                     }
@@ -248,15 +250,6 @@ class Ball {
                     closestIntersectionPoint = intersectionPoint;
                 }
             });
-            if (closestBrickIndex !== -1) {
-                bricks[closestBrickIndex] = null;  // Don't process the same brick twice.
-                // Actually, now that we check dot products with normals, this
-                // is probably no longer necessary. Even more, it's not entirely
-                // correct: if we wanted to allow bouncing many times from the
-                // same brick, this would make us end up inside the brick.
-            } else if (closestViewportEdgeIndex !== -1) {
-                viewportEdges[closestViewportEdgeIndex] = null;
-            }
 
             if (closestEdge) {
                 currentCenter = closestIntersectionPoint;
@@ -265,6 +258,7 @@ class Ball {
                 //console.log('Remaining', remainingVector);
                 const reflectedRemainingVector = bounceVector(remainingVector, closestEdge.normal);
                 targetVelocity = bounceVector(targetVelocity, closestEdge.normal);
+                checkForNaNVec(targetVelocity);
                 destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
                 // console.log(remainingVector, reflectedRemainingVector, destination);
             } else if (closestCorner) {
@@ -272,6 +266,7 @@ class Ball {
                 const remainingVector = subtractPoints(destination, closestIntersectionPoint);
                 const reflectedRemainingVector = bounceVector(remainingVector, cornerNormal);
                 targetVelocity = bounceVector(targetVelocity, cornerNormal);
+                checkForNaNVec(targetVelocity);
                 destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
             }
         }
@@ -337,8 +332,10 @@ function findCircleIntersectionPoint(circle, src, dest) {
     if (tCandidates.length === 0) {
         return;
     }
-    const t = Math.min(tCandidates);
-    return addVec(src, numMulVec(t, v));
+    const t = Math.min(...tCandidates);
+    const result = addVec(src, numMulVec(t, v));
+    checkForNaNVec(result);
+    return result;
 }
 
 function debugDotAt(point, color = 'blue') {
@@ -353,13 +350,19 @@ function debugDotAt(point, color = 'blue') {
     document.body.appendChild(el);
 }
 
+function checkForNaNVec(vec) {
+    if (isNaN(vec.x) || isNaN(vec.y)) {
+        throw Error('A wild NaN appeared!');
+    }
+}
+
 let game = null;
 
 function toggleGame() {
     if (game) {
         game.uninstall();
         game = null;
-        dy++;
+        //dy++;
     } else {
         const parent = document.querySelector(
             '[data-start-date-key][data-end-date-key]:not([data-disable-all-day-creation])');
