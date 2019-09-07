@@ -156,22 +156,17 @@ class Ball {
         let currentCenter = this.center;
         let targetVelocity = this.velocity;
         let destination = addVec(currentCenter, this.velocity);
-        let processAllBricks = true;
+        let processCollisions = true;
         let numCycles = 0;
-        while (processAllBricks) {
+        while (processCollisions) {
             numCycles++;
             if (numCycles > 20) {
                 console.log(`Cycle ${numCycles}!`);
             }
-            processAllBricks = false;
-            let closestBrick = null;
-            let closestEdge = null;
-            let closestCorner = null;
+            processCollisions = false;
             let closestDistance = Infinity;
-            let closestBrickIndex = -1;
-            let closestViewportEdgeIndex = -1;
             let closestIntersectionPoint = null;
-            let cornerNormal = null;
+            let collisionNormal = null;
             bricks.forEach((brick, brickIndex) => {
                 if (!brick) {
                     return;
@@ -191,10 +186,8 @@ class Ball {
                         if (numCycles > 1) {
                             console.log(`Collision in cycle ${numCycles}`);
                         }
-                        processAllBricks = true;
-                        closestBrickIndex = brickIndex;
-                        closestEdge = edge;
-                        closestCorner = null;
+                        processCollisions = true;
+                        collisionNormal = edge.normal;
                         closestDistance = distanceToIntersection;
                         closestIntersectionPoint = intersectionPoint;
                     }
@@ -205,9 +198,9 @@ class Ball {
                         continue;
                     }
                     // XXX: Everything bellow is bullshit, basically.
-                    cornerNormal = subtractPoints(intersectionPoint, corner.center);
-                    checkForNaNVec(cornerNormal);
-                    if (dotProduct(cornerNormal, targetVelocity) >= 0) {
+                    collisionNormal = subtractPoints(intersectionPoint, corner.center);
+                    checkForNaNVec(collisionNormal);
+                    if (dotProduct(collisionNormal, targetVelocity) >= 0) {
                         continue;
                     }
                     const distanceToIntersection = distance(currentCenter, intersectionPoint);
@@ -215,10 +208,7 @@ class Ball {
                         if (numCycles > 1) {
                             console.log(`Collision in cycle ${numCycles}`);
                         }
-                        processAllBricks = true;
-                        closestBrickIndex = brickIndex;
-                        closestEdge = null;
-                        closestCorner = corner;
+                        processCollisions = true;
                         closestDistance = distanceToIntersection;
                         closestIntersectionPoint = intersectionPoint;
                     }
@@ -241,31 +231,18 @@ class Ball {
                     if (numCycles > 1) {
                         console.log(`Collision in cycle ${numCycles}`);
                     }
-                    processAllBricks = true;
-                    closestBrickIndex = -1;
-                    closestViewportEdgeIndex = edgeIndex;
-                    closestEdge = edge;
-                    closestCorner = null;
+                    processCollisions = true;
+                    collisionNormal = edge.normal;
                     closestDistance = distanceToIntersection;
                     closestIntersectionPoint = intersectionPoint;
                 }
             });
 
-            if (closestEdge) {
-                currentCenter = closestIntersectionPoint;
-                //console.log(closestIntersectionPoint);
-                const remainingVector = subtractPoints(destination, closestIntersectionPoint);
-                //console.log('Remaining', remainingVector);
-                const reflectedRemainingVector = bounceVector(remainingVector, closestEdge.normal);
-                targetVelocity = bounceVector(targetVelocity, closestEdge.normal);
-                checkForNaNVec(targetVelocity);
-                destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
-                // console.log(remainingVector, reflectedRemainingVector, destination);
-            } else if (closestCorner) {
+            if (closestIntersectionPoint) {
                 currentCenter = closestIntersectionPoint;
                 const remainingVector = subtractPoints(destination, closestIntersectionPoint);
-                const reflectedRemainingVector = bounceVector(remainingVector, cornerNormal);
-                targetVelocity = bounceVector(targetVelocity, cornerNormal);
+                const reflectedRemainingVector = bounceVector(remainingVector, collisionNormal);
+                targetVelocity = bounceVector(targetVelocity, collisionNormal);
                 checkForNaNVec(targetVelocity);
                 destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
             }
