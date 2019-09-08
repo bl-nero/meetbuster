@@ -1,5 +1,11 @@
 'use strict';
 
+/**
+ * @typedef {Object} Vector
+ * @property {number} x
+ * @property {number} y
+ */
+
 chrome.runtime.onMessage.addListener(message => {
     if (message === 'toggle') {
         toggleGame();
@@ -77,7 +83,7 @@ class Brick {
             center: { x: rect.left + borderRadii[3], y: rect.bottom - borderRadii[3] - 1 },
             radius: cornerRadii[3],
         }];
-        console.log(this.edges, this.corners);
+        // console.log(this.edges, this.corners);
     }
 
     /**
@@ -101,6 +107,11 @@ class Brick {
     }
 }
 
+/**
+ * @param {string} str 
+ * @param {number} defaultValue 
+ * @return {number}
+ */
 function parsePx(str, defaultValue) {
     const matches = str.match(/(\d)+px/);
     if (matches.length < 2) {
@@ -109,28 +120,104 @@ function parsePx(str, defaultValue) {
     return parseInt(matches[1]);
 }
 
+/**
+ * @param {DOMRect} rect 
+ * @param {boolean} convex 
+ * @param {number} margin 
+ * @param {Array<number>} borderRadii 
+ * @return {Array<Edge>}
+ */
 function rectEdges(rect, convex, margin = 0, borderRadii = [0, 0, 0, 0]) {
     const normalMultiplier = convex ? 1 : -1;
     const left = rect.left - margin;
     const top = rect.top - margin;
     const right = rect.right - 1 + margin;
     const bottom = rect.bottom - 1 + margin;
-    return [{
-        ends: [{ x: left + borderRadii[0], y: top }, { x: right - borderRadii[1], y: top }],
-        normal: numMulVec(normalMultiplier, { x: 0, y: -1 }),
-    }, {
-        ends: [{ x: right, y: top + borderRadii[1] }, { x: right, y: bottom - borderRadii[2] }],
-        normal: numMulVec(normalMultiplier, { x: 1, y: 0 }),
-    }, {
-        ends: [{ x: right - borderRadii[2], y: bottom }, { x: left + borderRadii[3], y: bottom }],
-        normal: numMulVec(normalMultiplier, { x: 0, y: 1 }),
-    }, {
-        ends: [{ x: left, y: bottom - borderRadii[3] }, { x: left, y: top + borderRadii[0] }],
-        normal: numMulVec(normalMultiplier, { x: -1, y: 0 }),
-    }];
+    return [
+        new Edge(
+            [{ x: left + borderRadii[0], y: top }, { x: right - borderRadii[1], y: top }],
+            numMulVec(normalMultiplier, { x: 0, y: -1 })),
+        new Edge(
+            [{ x: right, y: top + borderRadii[1] }, { x: right, y: bottom - borderRadii[2] }],
+            numMulVec(normalMultiplier, { x: 1, y: 0 })),
+        new Edge(
+            [{ x: right - borderRadii[2], y: bottom }, { x: left + borderRadii[3], y: bottom }],
+            numMulVec(normalMultiplier, { x: 0, y: 1 })),
+        new Edge(
+            [{ x: left, y: bottom - borderRadii[3] }, { x: left, y: top + borderRadii[0] }],
+            numMulVec(normalMultiplier, { x: -1, y: 0 }))
+    ];
+}
+
+class Edge {
+    /**
+     * @param {Array<Vector>} ends 
+     * @param {Vector} normal 
+     */
+    constructor(ends, normal) {
+        this.ends = ends;
+        this.normal = normal;
+    }
+
+    /**
+     * @param {Vector} position 
+     * @param {Vector} displacement 
+     * @return {Collision}
+     */
+    detectCollision(position, displacement) {
+        if (dotProduct(this.normal, displacement) >= 0) {
+            return null;
+        }
+        const intersectionPoint = findIntersectionPoint(
+            this.ends[0], this.ends[1], position, addVec(position, displacement));
+        if (!intersectionPoint) {
+            return null;
+        }
+        return new Collision(position, displacement, intersectionPoint, this.normal);
+    }
+}
+
+/**
+ * @typedef {Object} CollisionResult
+ * @property {Vector} displacement
+ * @property {Vector} velocity
+ */
+
+class Collision {
+    /**
+     * @param {Vector} position 
+     * @param {Vector} displacement 
+     * @param {Vector} intersectionPoint 
+     * @param {Vector} normal 
+     */
+    constructor(position, displacement, intersectionPoint, normal) {
+        this.position = position;
+        this.displacement = displacement;
+        this.intersectionPoint = intersectionPoint;
+        this.normal = normal;
+    }
+
+    /**
+     * @param {Vector} velocity 
+     * @return {CollisionResult}
+     */
+    collide(velocity) {
+        // currentCenter = closestIntersectionPoint;
+        const destination = addVec(this.position, this.displacement);
+        const remainingVector = subtractPoints(destination, this.intersectionPoint);
+        return {
+            displacement: bounceVector(remainingVector, this.normal),
+            velocity: bounceVector(velocity, this.normal),
+        };
+    }
 }
 
 class Ball {
+    /**
+     * @param {number} x 
+     * @param {number} y 
+     * @param {number} radius 
+     */
     constructor(x, y, radius) {
         this.center = { x, y };
         this.velocity = { x: 5, y: 5 };
@@ -152,44 +239,48 @@ class Ball {
         this.domElement.remove();
     }
 
+    /**
+     * @param {Array<Edge>} viewportEdges 
+     * @param {Array<Brick>} bricks 
+     */
     update(viewportEdges, bricks) {
         let currentCenter = this.center;
-        let targetVelocity = this.velocity;
+        let currentVelocity = this.velocity;
         let destination = addVec(currentCenter, this.velocity);
         let processCollisions = true;
         let numCycles = 0;
         while (processCollisions) {
             numCycles++;
-            if (numCycles > 20) {
+            if (numCycles > 10) {
                 console.log(`Cycle ${numCycles}!`);
+                debugger;
             }
             processCollisions = false;
             let closestDistance = Infinity;
             let closestIntersectionPoint = null;
             let collisionNormal = null;
+            /** @type {Collision} */
+            let closestCollision = null;
             bricks.forEach((brick, brickIndex) => {
                 if (!brick) {
                     return;
                 }
                 // Yeah, I know. Extremely inefficient. Will optimize later if needed.
                 for (const edge of brick.edges) {
-                    if (dotProduct(edge.normal, targetVelocity) >= 0) {
+                    const collision = edge.detectCollision(
+                        currentCenter, subtractPoints(destination, currentCenter));
+                    if (!collision) {
                         continue;
                     }
-                    const intersectionPoint = findIntersectionPoint(
-                        edge.ends[0], edge.ends[1], currentCenter, destination);
-                    if (!intersectionPoint) {
-                        continue;
-                    }
-                    const distanceToIntersection = distance(currentCenter, intersectionPoint);
-                    if (distanceToIntersection < closestDistance) {
+                    const distanceToCollision = distance(currentCenter, collision.intersectionPoint);
+                    if (distanceToCollision < closestDistance) {
                         if (numCycles > 1) {
                             console.log(`Collision in cycle ${numCycles}`);
                         }
                         processCollisions = true;
-                        collisionNormal = edge.normal;
-                        closestDistance = distanceToIntersection;
-                        closestIntersectionPoint = intersectionPoint;
+                        closestCollision = collision;
+                        closestIntersectionPoint = null;
+                        closestDistance = distanceToCollision;
                     }
                 }
                 for (const corner of brick.corners) {
@@ -200,7 +291,7 @@ class Ball {
                     // XXX: Everything bellow is bullshit, basically.
                     collisionNormal = subtractPoints(intersectionPoint, corner.center);
                     checkForNaNVec(collisionNormal);
-                    if (dotProduct(collisionNormal, targetVelocity) >= 0) {
+                    if (dotProduct(collisionNormal, currentVelocity) >= 0) {
                         continue;
                     }
                     const distanceToIntersection = distance(currentCenter, intersectionPoint);
@@ -211,6 +302,7 @@ class Ball {
                         processCollisions = true;
                         closestDistance = distanceToIntersection;
                         closestIntersectionPoint = intersectionPoint;
+                        closestCollision = null;
                     }
                 }
             });
@@ -218,7 +310,7 @@ class Ball {
                 if (!edge) {
                     return;
                 }
-                if (dotProduct(edge.normal, targetVelocity) >= 0) {
+                if (dotProduct(edge.normal, currentVelocity) >= 0) {
                     return;
                 }
                 const intersectionPoint = findIntersectionPoint(
@@ -238,18 +330,23 @@ class Ball {
                 }
             });
 
-            if (closestIntersectionPoint) {
+            if (closestCollision) {
+                currentCenter = closestCollision.intersectionPoint;
+                const collisionResult = closestCollision.collide(currentVelocity);
+                destination = addVec(currentCenter, collisionResult.displacement);
+                currentVelocity = collisionResult.velocity;
+            } else if (closestIntersectionPoint) {
                 currentCenter = closestIntersectionPoint;
                 const remainingVector = subtractPoints(destination, closestIntersectionPoint);
                 const reflectedRemainingVector = bounceVector(remainingVector, collisionNormal);
-                targetVelocity = bounceVector(targetVelocity, collisionNormal);
-                checkForNaNVec(targetVelocity);
+                currentVelocity = bounceVector(currentVelocity, collisionNormal);
+                checkForNaNVec(currentVelocity);
                 destination = addVec(reflectedRemainingVector, closestIntersectionPoint);
             }
         }
 
         this.center = destination;
-        this.velocity = targetVelocity;
+        this.velocity = currentVelocity;
     }
 
     render() {
@@ -258,30 +355,61 @@ class Ball {
     }
 }
 
+/**
+ * @param {Vector} p 
+ * @param {Vector} q 
+ * @return {number}
+ */
 function distance(p, q) {
     return vecLength({ x: p.x - q.x, y: p.y - q.y });
 }
 
+/**
+ * @param {Vector} v 
+ * @return {number}
+ */
 function vecLength(v) {
     return Math.sqrt(v.x * v.x + v.y * v.y)
 }
 
+/**
+ * @param {Vector} v 
+ * @param {Vector} normal 
+ * @return {Vector}
+ */
 function bounceVector(v, normal) {
-    return addVec(
+    const result = addVec(
         numMulVec(
             -2 * dotProduct(v, normal) / dotProduct(normal, normal),
             normal),
         v);
+    checkForNaNVec(result);
+    return result;
 }
 
+/**
+ * @param {number} num 
+ * @param {Vector} v 
+ * @return {Vector}
+ */
 function numMulVec(num, v) {
     return { x: v.x * num, y: v.y * num };
 }
 
+/**
+ * @param {Vector} v1 
+ * @param {Vector} v2 
+ * @return {number}
+ */
 function dotProduct(v1, v2) {
     return v1.x * v2.x + v1.y * v2.y;
 }
 
+/**
+ * @param {Vector} p 
+ * @param {Vector} v 
+ * @return {Vector}
+ */
 function addVec(p, v) {
     return { x: p.x + v.x, y: p.y + v.y };
 }
@@ -315,6 +443,10 @@ function findCircleIntersectionPoint(circle, src, dest) {
     return result;
 }
 
+/**
+ * @param {Vector} point 
+ * @param {string} color 
+ */
 function debugDotAt(point, color = 'blue') {
     const el = document.createElement('div');
     el.style.position = 'fixed';
@@ -327,6 +459,9 @@ function debugDotAt(point, color = 'blue') {
     document.body.appendChild(el);
 }
 
+/**
+ * @param {Vector} vec 
+ */
 function checkForNaNVec(vec) {
     if (isNaN(vec.x) || isNaN(vec.y)) {
         throw Error('A wild NaN appeared!');
