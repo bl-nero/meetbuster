@@ -88,7 +88,7 @@ class Brick {
                 cornerRadii[3],
             )
         ];
-        // console.log(this.edges, this.corners);
+        this.hidden = false;
     }
 
     /**
@@ -105,10 +105,12 @@ class Brick {
 
     hide() {
         this.domElement.style.display = 'none';
+        this.hidden = true;
     }
 
     show() {
         this.domElement.style.display = '';
+        this.hidden = false;
     }
 
     /**
@@ -117,7 +119,42 @@ class Brick {
      * @return {Collision}
      */
     detectCollision(position, displacement) {
-        return detectClosestCollision([...this.edges, ...this.corners], position, displacement);
+        if (this.hidden) {
+            return null;
+        }
+        const internalCollision = detectClosestCollision(
+            [...this.edges, ...this.corners], position, displacement);
+        if (!internalCollision) {
+            return null;
+        }
+        return new BrickCollision(internalCollision, this);
+    }
+}
+
+class BrickCollision {
+    /**
+     * @param {Collision} internalCollision 
+     * @param {Brick} brick
+     */
+    constructor(internalCollision, brick) {
+        this.internalCollision = internalCollision;
+        this.brick = brick;
+    }
+
+    /**
+     * @return {Vector}
+     */
+    getIntersectionPoint() {
+        return this.internalCollision.getIntersectionPoint();
+    }
+
+    /**
+     * @param {Vector} velocity 
+     * @return {CollisionResult}
+     */
+    collide(velocity) {
+        this.brick.hide();
+        return this.internalCollision.collide(velocity);
     }
 }
 
@@ -130,7 +167,7 @@ function detectClosestCollision(colliders, position, displacement) {
     let closestCollisionDistance = Infinity;
     let closestCollision = null;
     for (const collision of collisions) {
-        const distanceToCollision = distance(position, collision.intersectionPoint);
+        const distanceToCollision = distance(position, collision.getIntersectionPoint());
         if (distanceToCollision < closestCollisionDistance) {
             closestCollision = collision;
             closestCollisionDistance = distanceToCollision;
@@ -259,6 +296,13 @@ class Collision {
     }
 
     /**
+     * @return {Vector}
+     */
+    getIntersectionPoint() {
+        return this.intersectionPoint;
+    }
+
+    /**
      * @param {Vector} velocity 
      * @return {CollisionResult}
      */
@@ -322,7 +366,7 @@ class Ball {
                 subtractPoints(destination, currentCenter));
 
             if (closestCollision) {
-                currentCenter = closestCollision.intersectionPoint;
+                currentCenter = closestCollision.getIntersectionPoint();
                 const collisionResult = closestCollision.collide(currentVelocity);
                 destination = addVec(currentCenter, collisionResult.displacement);
                 currentVelocity = collisionResult.velocity;
