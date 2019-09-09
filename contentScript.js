@@ -58,6 +58,10 @@ class Game {
     }
 }
 
+class DomElementCollider {
+
+}
+
 class Brick {
     /**
      * @param {HTMLElement} domElement
@@ -381,6 +385,10 @@ class Ball {
         this.domElement.style.left = `${this.center.x - this.radius}px`;
         this.domElement.style.top = `${this.center.y - this.radius}px`;
     }
+}
+
+class Paddle {
+
 }
 
 /**
