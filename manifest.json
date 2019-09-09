@@ -19,6 +19,9 @@
             ],
             "js": [
                 "line-segments-intersect.js",
+                "geometry.js",
+                "physics.js",
+                "game.js",
                 "contentScript.js"
             ]
         }
