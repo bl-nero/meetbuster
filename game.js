@@ -124,14 +124,14 @@ class Game {
     }
 
     onBrickDestroyed(brick) {
-        this.score++;
+        this.score += brick.value;
     }
 
     uninstall() {
         this.paddle.uninstall();
         this.ball.uninstall();
         for (const brick of this.bricks) {
-            brick.show();
+            brick.uninstall();
         }
         this.gameOverlay.remove();
         this.installed = false;
@@ -210,8 +210,14 @@ class Brick {
     constructor(domElement, ballRadius, onDestroyed) {
         this.domElement = domElement;
         this.collider = new DomElementCollider(domElement, ballRadius);
-        this.hidden = false;
+        this.destroyed = false;
         this.onDestroyed = onDestroyed || (() => {});
+
+        const style = getComputedStyle(this.domElement);
+        this.value = style.backgroundColor === 'rgb(255, 255, 255)' ? 1 : 3;
+        this.hp = this.value;
+        this.originalOpacity = this.domElement.style.opacity;
+        this.domElement.style.opacity = 1;
     }
 
     /**
@@ -227,14 +233,18 @@ class Brick {
         return new Brick(domElement, ballRadius, onDestroyed);
     }
 
-    hide() {
-        this.domElement.style.display = 'none';
-        this.hidden = true;
+    takeDamage() {
+        --this.hp;
+        this.domElement.style.opacity = `${this.hp / this.value}`;
+        if (this.hp <= 0) {
+            this.destroyed = true;
+            this.onDestroyed(this);
+        }
     }
 
-    show() {
-        this.domElement.style.display = '';
-        this.hidden = false;
+    uninstall() {
+        this.domElement.style.opacity = this.originalOpacity;
+        this.destroyed = false;
     }
 
     /**
@@ -243,7 +253,7 @@ class Brick {
      * @return {Collision}
      */
     detectCollision(position, displacement) {
-        if (this.hidden) {
+        if (this.destroyed) {
             return null;
         }
         const internalCollision = this.collider.detectCollision(position, displacement);
@@ -276,8 +286,7 @@ class BrickCollision {
      * @return {CollisionResult}
      */
     collide(velocity) {
-        this.brick.hide();
-        this.brick.onDestroyed(this.brick);
+        this.brick.takeDamage();
         return this.internalCollision.collide(velocity);
     }
 }
