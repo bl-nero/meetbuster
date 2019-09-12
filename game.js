@@ -3,16 +3,25 @@ class Game {
     constructor(gameViewport) {
         this.gameViewport = gameViewport;
         this.viewportRect = gameViewport.getBoundingClientRect();
-        this.viewportRect.x -= 40;
-        this.viewportRect.width += 40;
-        this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false);
-        console.log(this.viewportRect, this.viewportEdges);
+        this.viewportRect.x -= 36;
+        this.viewportRect.width += 36;
+        // Take only top, right, and bottom edge.
+        this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false).slice(0, 3);
         this.installed = false;
         this.lastTimestamp = null;
         this.ballInMovement = false;
+        this.failing = false;
+        this.failingStart = null;
+        this.score = 0;
+        this.lives = 3;
+        this.onExit = () => {};
     }
 
     install() {
+        const ballRadius = 5;
+        const paddleWidth = 16;
+        const paddleHeight = 50;
+
         this.gameOverlay = document.createElement('div');
         this.gameOverlay.style.position = 'fixed';
         this.gameOverlay.style.left = '0px';
@@ -25,21 +34,27 @@ class Game {
         this.gameOverlay.addEventListener('click', e => this.onClick(e));
         document.body.appendChild(this.gameOverlay);
 
-        const ballRadius = 5;
+        this.statusDisplay = new StatusDisplay(
+            5, 5, this.viewportRect.left - 10, this.viewportRect.top - 10, paddleWidth, paddleHeight);
+        this.statusDisplay.install(this.gameOverlay);
 
         const brickElements = [...this.gameViewport.querySelectorAll('[data-eventchip]')];
         this.bricks = brickElements
-            .map(elem => Brick.create(elem, this.viewportRect, ballRadius))
+            .map(elem => Brick.create(
+                elem, this.viewportRect, ballRadius, brick => this.onBrickDestroyed(brick)))
             .filter(brick => brick);
 
-        this.ball = new Ball(this.viewportRect.left, this.viewportRect.top + dy, ballRadius);
+        this.ball = new Ball(this.viewportRect.left, this.viewportRect.top, ballRadius);
         this.ball.install(this.gameOverlay);
 
         this.paddle = new Paddle(
-            { x: this.viewportRect.left , y: (this.viewportRect.top + this.viewportRect.bottom) / 2},
-            ballRadius, 16, 50);
+            { x: this.viewportRect.left, y: (this.viewportRect.top + this.viewportRect.bottom) / 2 },
+            ballRadius,
+            paddleWidth,
+            paddleHeight);
         this.paddle.install(this.gameOverlay);
 
+        this.score = 0;
         this.installed = true;
         requestAnimationFrame(ts => this.update(ts));
     }
@@ -56,10 +71,32 @@ class Game {
             this.ball.update([this.paddle, ...this.viewportEdges, ...this.bricks]);
         } else {
             this.ball.center = {
-                x: this.paddle.center.x + this.paddle.width / 2 + this.ball.radius / 2,
-                y: this.paddle.center.y + this.paddle.height / 2,
+                x: this.paddle.center.x + this.paddle.width / 2 + this.ball.radius,
+                y: this.paddle.center.y + this.paddle.height / 4,
             };
         }
+        if (this.failing) {
+            const timeSinceFailingStart = timestamp - this.failingStart;
+            this.ball.opacity = Math.max(1 - (timeSinceFailingStart) / 500, 0);
+            if (timeSinceFailingStart >= 1000) {
+                this.failing = false;
+                this.ball.opacity = 1;
+                this.ballInMovement = false;
+                this.lives--;
+                if (this.lives < 0) {
+                    alert('Game over!');
+                    this.onExit(this);
+                    return;
+                }
+            }
+        } else if (this.ball.center.x < this.paddle.center.x) {
+            // this.ballInMovement = false;
+            this.failing = true;
+            this.failingStart = timestamp;
+        }
+        this.statusDisplay.update(this.score, this.lives);
+
+        this.statusDisplay.render();
         this.paddle.render();
         this.ball.render();
         requestAnimationFrame(ts => this.update(ts));
@@ -69,11 +106,25 @@ class Game {
      * @param {MouseEvent} event
      */
     onMouseUpdate(event) {
-        this.paddle.moveTo(event.clientY);
+        const y = Math.min(
+            this.viewportRect.bottom - this.paddle.height / 2,
+            Math.max(
+                this.viewportRect.top + this.paddle.height / 2 + 1,
+                event.clientY,
+            )
+        )
+        this.paddle.moveTo(y);
     }
 
     onClick() {
-        this.ballInMovement = true;
+        if (!this.ballInMovement) {
+            this.ballInMovement = true;
+            this.ball.velocity = { x: 5, y: 5 };
+        }
+    }
+
+    onBrickDestroyed(brick) {
+        this.score++;
     }
 
     uninstall() {
@@ -87,27 +138,93 @@ class Game {
     }
 }
 
+class StatusDisplay {
+    constructor(left, top, width, height, paddleWidth, paddleHeight) {
+        this.left = left;
+        this.top = top;
+        this.width = width;
+        this.height = height;
+        this.paddleWidth = paddleWidth;
+        this.paddleHeight = paddleHeight;
+    }
+
+    /**
+     * @param {HTMLElement} parent 
+     */
+    install(parent) {
+        this.root = document.createElement('div');
+        Object.assign(this.root.style, {
+            boxSizing: 'border-box',
+            position: 'absolute',
+            top: `${this.top}px`,
+            left: `${this.left}px`,
+            width: `${this.width}px`,
+            height: `${this.height}px`,
+            border: '2px solid #888',
+            borderRadius: '5px',
+            backgroundColor: 'white',
+            fontSize: '50px',
+            padding: '10px',
+            textAlign: 'right',
+        });
+        parent.appendChild(this.root);
+
+        this.scoreDisplay = document.createElement('div');
+        this.root.appendChild(this.scoreDisplay);
+
+        this.livesDisplay = document.createElement('div');
+        Object.assign(this.livesDisplay.style, {
+            display: 'flex',
+            justifyContent: 'flex-end',
+        })
+        this.root.appendChild(this.livesDisplay);
+
+        this.lifeIcons = [];
+    }
+
+    update(score, lives) {
+        this.score = score;
+        this.lives = lives;
+        while (this.lifeIcons.length < lives) {
+            const icon = createPaddleElement(this.paddleWidth, this.paddleHeight);
+            this.lifeIcons.push(icon);
+            icon.style.margin = '5px';
+            this.livesDisplay.appendChild(icon);
+        }
+    }
+
+    render() {
+        this.scoreDisplay.textContent = `${this.score}`;
+        this.lifeIcons.forEach((icon, index) => {
+            icon.style.display = index < this.lives ? '' : 'none';
+        });
+    }
+}
+
 class Brick {
     /**
      * @param {HTMLElement} domElement
      * @param {number} ballRadius
+     * @param {function(Brick)} onDestroyed
      */
-    constructor(domElement, ballRadius) {
+    constructor(domElement, ballRadius, onDestroyed) {
         this.domElement = domElement;
         this.collider = new DomElementCollider(domElement, ballRadius);
         this.hidden = false;
+        this.onDestroyed = onDestroyed || (() => {});
     }
 
     /**
      * @param {HTMLElement} domElement 
      * @param {DOMRect} viewportRect 
+     * @param {function(Brick)} onDestroyed
      */
-    static create(domElement, viewportRect, ballRadius) {
+    static create(domElement, viewportRect, ballRadius, onDestroyed) {
         const rect = domElement.getBoundingClientRect();
         if (rect.bottom < viewportRect.top || rect.top >= viewportRect.bottom) {
             return null;
         }
-        return new Brick(domElement, ballRadius);
+        return new Brick(domElement, ballRadius, onDestroyed);
     }
 
     hide() {
@@ -160,6 +277,7 @@ class BrickCollision {
      */
     collide(velocity) {
         this.brick.hide();
+        this.brick.onDestroyed(this.brick);
         return this.internalCollision.collide(velocity);
     }
 }
@@ -172,8 +290,9 @@ class Ball {
      */
     constructor(x, y, radius) {
         this.center = { x, y };
-        this.velocity = { x: 5, y: 5 };
+        this.velocity = { x: 0, y: 0 };
         this.radius = radius;
+        this.opacity = 1;
     }
 
     install(parent) {
@@ -228,6 +347,7 @@ class Ball {
     render() {
         this.domElement.style.left = `${this.center.x - this.radius}px`;
         this.domElement.style.top = `${this.center.y - this.radius}px`;
+        this.domElement.style.opacity = `${this.opacity}`;
     }
 }
 
@@ -235,6 +355,7 @@ class Paddle {
     /**
      * @param {number} ballRadius
      * @param {DOMRect} viewportRect
+     * @param {number} width
      * @param {number} height
      */
     constructor(position, ballRadius, width, height) {
@@ -242,11 +363,7 @@ class Paddle {
         this.ballRadius = ballRadius;
         this.width = width;
         this.height = height;
-        this.domElement = document.createElement('div');
-        this.domElement.style.backgroundColor = '#888';
-        this.domElement.style.borderRadius = `${height / 2}px`;
-        this.domElement.style.width = '16px';
-        this.domElement.style.height = `${height}px`;
+        this.domElement = createPaddleElement(this.width, this.height);
         this.domElement.style.position = 'absolute';
     }
 
@@ -280,6 +397,17 @@ class Paddle {
     uninstall() {
         this.domElement.remove();
     }
+}
+
+function createPaddleElement(width, height) {
+    const element = document.createElement('div');
+    Object.assign(element.style, {
+        backgroundColor: '#888',
+        borderRadius: `${height / 2}px`,
+        width: `${width}px`,
+        height: `${height}px`,
+    });
+    return element;
 }
 
 /**
