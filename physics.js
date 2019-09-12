@@ -97,7 +97,45 @@ class Collision {
 }
 
 class DomElementCollider {
+    /**
+     * @param {HTMLElement} domElement
+     * @param {number} ballRadius
+     */
+    constructor(domElement, ballRadius) {
+        const rect = domElement.getBoundingClientRect();
+        const elementStyle = window.getComputedStyle(domElement);
+        const cornerNames = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+        const borderRadii = cornerNames.map(name => parsePx(elementStyle.getPropertyValue(`border-${name}-radius`), 4));
+        const cornerRadii = borderRadii.map(borderRadius => borderRadius + ballRadius);
+        this.edges = rectEdges(rect, /* convex = */ true, ballRadius, borderRadii);
+        this.corners = [
+            new Corner(
+                { x: rect.left + borderRadii[0], y: rect.top + borderRadii[0] },
+                cornerRadii[0],
+            ),
+            new Corner(
+                { x: rect.right - borderRadii[1] - 1, y: rect.top + borderRadii[1] },
+                cornerRadii[1],
+            ),
+            new Corner(
+                { x: rect.right - borderRadii[2] - 1, y: rect.bottom - borderRadii[2] - 1 },
+                cornerRadii[2],
+            ),
+            new Corner(
+                { x: rect.left + borderRadii[3], y: rect.bottom - borderRadii[3] - 1 },
+                cornerRadii[3],
+            )
+        ];
+    }
 
+    /**
+     * @param {Vector} position 
+     * @param {Vector} displacement 
+     * @return {Collision}
+     */
+    detectCollision(position, displacement) {
+        return detectClosestCollision([...this.edges, ...this.corners], position, displacement);
+    }
 }
 
 /**
