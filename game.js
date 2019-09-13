@@ -1,20 +1,18 @@
 class Game {
-    /** @param {HTMLElement} gameViewport */
-    constructor(gameViewport) {
-        this.gameViewport = gameViewport;
-        this.viewportRect = gameViewport.getBoundingClientRect();
-        this.viewportRect.x -= 36;
-        this.viewportRect.width += 36;
-        // Take only top, right, and bottom edge.
-        this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false).slice(0, 3);
+    constructor() {
         this.installed = false;
         this.lastTimestamp = null;
         this.ballInMovement = false;
         this.failing = false;
         this.failingStart = null;
+        this.finishing = false;
+        this.finishingStart = null;
+        this.waitingForStage = false;
+        this.waitingForStageStart = null;
         this.score = 0;
         this.lives = 3;
-        this.onExit = () => {};
+        this.bricks = [];
+        this.onExit = () => { };
     }
 
     install() {
@@ -34,29 +32,54 @@ class Game {
         this.gameOverlay.addEventListener('click', e => this.onClick(e));
         document.body.appendChild(this.gameOverlay);
 
-        this.statusDisplay = new StatusDisplay(
-            5, 5, this.viewportRect.left - 10, this.viewportRect.top - 10, paddleWidth, paddleHeight);
-        this.statusDisplay.install(this.gameOverlay);
+        this.nextWeekButton = document.querySelector('[role=button][aria-label="next week" i]');
+        if (!this.nextWeekButton) {
+            throw new Error('I have no memory of this place…');
+        }
 
-        const brickElements = [...this.gameViewport.querySelectorAll('[data-eventchip]')];
-        this.bricks = brickElements
-            .map(elem => Brick.create(
-                elem, this.viewportRect, ballRadius, brick => this.onBrickDestroyed(brick)))
-            .filter(brick => brick);
-
-        this.ball = new Ball(this.viewportRect.left, this.viewportRect.top, ballRadius);
+        this.ball = new Ball(ballRadius);
         this.ball.install(this.gameOverlay);
 
-        this.paddle = new Paddle(
-            { x: this.viewportRect.left, y: (this.viewportRect.top + this.viewportRect.bottom) / 2 },
-            ballRadius,
-            paddleWidth,
-            paddleHeight);
+        this.paddle = new Paddle(ballRadius, paddleWidth, paddleHeight);
         this.paddle.install(this.gameOverlay);
 
         this.score = 0;
         this.installed = true;
+
+        this.initializeStage();
         requestAnimationFrame(ts => this.update(ts));
+    }
+
+    initializeStage() {
+        const gameViewport = document.querySelector(
+            '[data-start-date-key][data-end-date-key]:not([data-disable-all-day-creation])');
+        if (!gameViewport) {
+            throw new Error('I have no memory of this place…');
+        }
+        this.viewportRect = gameViewport.getBoundingClientRect();
+        this.viewportRect.x -= 36;
+        this.viewportRect.width += 36;
+        // Take only top, right, and bottom edge.
+        this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false).slice(0, 3);
+
+        if (this.statusDisplay) {
+            this.statusDisplay.uninstall();
+        }
+        this.statusDisplay = new StatusDisplay(
+            5, 5, this.viewportRect.left - 10, this.viewportRect.top - 10, this.paddle.width, this.paddle.height);
+        this.statusDisplay.install(this.gameOverlay);
+
+        this.paddle.moveTo(this.viewportRect.left, (this.viewportRect.top + this.viewportRect.bottom) / 2);
+
+        for (const brick of this.bricks) {
+            brick.uninstall();
+        }
+        const brickElements = [...gameViewport.querySelectorAll('[data-eventchip]')];
+        this.bricks = brickElements
+            .map(elem => Brick.create(
+                elem, this.viewportRect, this.ball.radius, brick => this.onBrickDestroyed(brick)))
+            .filter(brick => brick);
+        this.ballInMovement = false;
     }
 
     update(timestamp) {
@@ -67,14 +90,23 @@ class Game {
             this.lastTimestamp = timestamp;
         }
 
+        const timeDelta = timestamp - this.lastTimestamp;
+
         if (this.ballInMovement) {
-            this.ball.update([this.paddle, ...this.viewportEdges, ...this.bricks]);
+            this.ball.update(timeDelta, [this.paddle, ...this.viewportEdges, ...this.bricks]);
         } else {
             this.ball.center = {
                 x: this.paddle.center.x + this.paddle.width / 2 + this.ball.radius,
                 y: this.paddle.center.y + this.paddle.height / 4,
             };
         }
+
+        const numBricksAlive = this.bricks.reduce((cnt, brick) => brick.destroyed ? cnt : cnt + 1, 0);
+        if (numBricksAlive === 0 && !this.finishing) {
+            this.finishingStart = timestamp;
+            this.finishing = true;
+        }
+
         if (this.failing) {
             const timeSinceFailingStart = timestamp - this.failingStart;
             this.ball.opacity = Math.max(1 - (timeSinceFailingStart) / 500, 0);
@@ -89,6 +121,25 @@ class Game {
                     return;
                 }
             }
+        } else if (this.finishing) {
+            const timeSinceFinishingStart = timestamp - this.finishingStart;
+            if (!this.waitingForStage) {
+                this.ball.opacity = Math.max(1 - (timeSinceFinishingStart) / 500, 0);
+                if (timeSinceFinishingStart >= 1000) {
+                    this.ball.opacity = 1;
+                    this.ballInMovement = false;
+                    this.nextWeekButton.click();
+                    this.waitingForStage = true;
+                    this.waitingForStageStart = timestamp;
+                }
+            } else {
+                const timeSinceWaitingForStage = timestamp - this.waitingForStageStart;
+                if (timeSinceWaitingForStage >= 1000) {
+                    this.initializeStage();
+                    this.waitingForStage = false;
+                    this.finishing = false;
+                }
+            }
         } else if (this.ball.center.x < this.paddle.center.x) {
             // this.ballInMovement = false;
             this.failing = true;
@@ -99,6 +150,7 @@ class Game {
         this.statusDisplay.render();
         this.paddle.render();
         this.ball.render();
+        this.lastTimestamp = timestamp;
         requestAnimationFrame(ts => this.update(ts));
     }
 
@@ -113,13 +165,13 @@ class Game {
                 event.clientY,
             )
         )
-        this.paddle.moveTo(y);
+        this.paddle.moveTo(this.viewportRect.left, y);
     }
 
     onClick() {
-        if (!this.ballInMovement) {
+        if (!this.ballInMovement && !this.finishing) {
             this.ballInMovement = true;
-            this.ball.velocity = { x: 5, y: 5 };
+            this.ball.velocity = { x: 0.3, y: 0.3 };
         }
     }
 
@@ -199,6 +251,10 @@ class StatusDisplay {
             icon.style.display = index < this.lives ? '' : 'none';
         });
     }
+
+    uninstall() {
+        this.root.remove();
+    }
 }
 
 class Brick {
@@ -211,7 +267,7 @@ class Brick {
         this.domElement = domElement;
         this.collider = new DomElementCollider(domElement, ballRadius);
         this.destroyed = false;
-        this.onDestroyed = onDestroyed || (() => {});
+        this.onDestroyed = onDestroyed || (() => { });
 
         const style = getComputedStyle(this.domElement);
         this.value = style.backgroundColor === 'rgb(255, 255, 255)' ? 1 : 3;
@@ -293,12 +349,10 @@ class BrickCollision {
 
 class Ball {
     /**
-     * @param {number} x 
-     * @param {number} y 
      * @param {number} radius 
      */
-    constructor(x, y, radius) {
-        this.center = { x, y };
+    constructor(radius) {
+        this.center = { x: 0, y: 0 };
         this.velocity = { x: 0, y: 0 };
         this.radius = radius;
         this.opacity = 1;
@@ -319,13 +373,13 @@ class Ball {
     }
 
     /**
+     * @param {number} timeDelta
      * @param {Array<Edge|Brick|Paddle>} colliders 
-     * @param {Array<Brick>} bricks 
      */
-    update(colliders) {
+    update(timeDelta, colliders) {
         let currentCenter = this.center;
         let currentVelocity = this.velocity;
-        let destination = addVec(currentCenter, this.velocity);
+        let displacement = numMulVec(timeDelta, this.velocity);
         let processCollisions = true;
         let numCycles = 0;
         while (processCollisions) {
@@ -338,18 +392,18 @@ class Ball {
             const closestCollision = detectClosestCollision(
                 colliders,
                 currentCenter,
-                subtractPoints(destination, currentCenter));
+                displacement);
 
             if (closestCollision) {
                 processCollisions = true;
                 currentCenter = closestCollision.getIntersectionPoint();
                 const collisionResult = closestCollision.collide(currentVelocity);
-                destination = addVec(currentCenter, collisionResult.displacement);
+                displacement = collisionResult.displacement;
                 currentVelocity = collisionResult.velocity;
             }
         }
 
-        this.center = destination;
+        this.center = addVec(currentCenter, displacement);
         this.velocity = currentVelocity;
     }
 
@@ -363,12 +417,11 @@ class Ball {
 class Paddle {
     /**
      * @param {number} ballRadius
-     * @param {DOMRect} viewportRect
      * @param {number} width
      * @param {number} height
      */
-    constructor(position, ballRadius, width, height) {
-        this.center = position;
+    constructor(ballRadius, width, height) {
+        this.center = { x: 0, y: 0 };
         this.ballRadius = ballRadius;
         this.width = width;
         this.height = height;
@@ -376,7 +429,8 @@ class Paddle {
         this.domElement.style.position = 'absolute';
     }
 
-    moveTo(y) {
+    moveTo(x, y) {
+        this.center.x = x;
         this.center.y = y;
     }
 

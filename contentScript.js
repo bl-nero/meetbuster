@@ -13,12 +13,7 @@ function toggleGame() {
         game.uninstall();
         game = null;
     } else {
-        const parent = document.querySelector(
-            '[data-start-date-key][data-end-date-key]:not([data-disable-all-day-creation])');
-        if (!parent) {
-            alert('I have no memory of this place…');
-        }
-        game = new Game(parent);
+        game = new Game();
         game.onExit = () => {
             game.uninstall();
             game = null;
