@@ -57,8 +57,9 @@ class Game {
             throw new Error('I have no memory of this place…');
         }
         this.viewportRect = gameViewport.getBoundingClientRect();
-        this.viewportRect.x -= 36;
-        this.viewportRect.width += 36;
+        const paddleLineOffset = Math.min(36, this.viewportRect.x - this.paddle.width / 2);
+        this.viewportRect.x -= paddleLineOffset;
+        this.viewportRect.width += paddleLineOffset;
         // Take only top, right, and bottom edge.
         this.viewportEdges = rectEdges(this.viewportRect, /* convex = */ false).slice(0, 3);
 
@@ -66,7 +67,7 @@ class Game {
             this.statusDisplay.uninstall();
         }
         this.statusDisplay = new StatusDisplay(
-            5, 5, this.viewportRect.left - 10, this.viewportRect.top - 10, this.paddle.width, this.paddle.height);
+            5, 5, 150, this.viewportRect.top - 10, this.paddle.width, this.paddle.height);
         this.statusDisplay.install(this.gameOverlay);
 
         this.paddle.moveTo(this.viewportRect.left, (this.viewportRect.top + this.viewportRect.bottom) / 2);
