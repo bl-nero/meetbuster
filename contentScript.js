@@ -20,6 +20,7 @@ function toggleGame() {
         }
         try {
             game.install();
+            game.run();
         } catch (e) {
             game.uninstall();
             game = null;

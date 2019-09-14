@@ -12,6 +12,7 @@ class Game {
         this.highScore = 0;
         this.score = 0;
         this.lives = 3;
+        this.clicked = false;
         this.bricks = [];
         this.onExit = () => { };
     }
@@ -49,7 +50,6 @@ class Game {
 
         this.initializeStage();
         chrome.storage.sync.get({ highScore: 0 }, ({ highScore }) => this.highScore = highScore);
-        requestAnimationFrame(ts => this.update(ts));
     }
 
     initializeStage() {
@@ -85,80 +85,117 @@ class Game {
         this.ballInMovement = false;
     }
 
-    update(timestamp) {
-        if (!this.installed) {
-            return;
-        }
-        if (this.lastTimestamp == null) {
-            this.lastTimestamp = timestamp;
-        }
+    nextFrame() {
+        return new Promise((resolve, reject) => {
+            requestAnimationFrame(timestamp => {
+                if (this.installed) {
+                    resolve(timestamp);
+                } else {
+                    reject(new GameUninstalled());
+                }
+            });
+        });
+    }
 
-        const timeDelta = timestamp - this.lastTimestamp;
-
-        if (this.ballInMovement) {
-            this.ball.update(timeDelta, [this.paddle, ...this.viewportEdges, ...this.bricks]);
-        } else {
-            this.ball.center = {
-                x: this.paddle.center.x + this.paddle.width / 2 + this.ball.radius,
-                y: this.paddle.center.y + this.paddle.height / 4,
-            };
+    async repeatUntilMs(fn, duration, startTimestamp) {
+        for (let ts = 0; ts < duration; ts = await this.nextFrame() - startTimestamp) {
+            fn(ts);
         }
+    }
 
-        const numBricksAlive = this.bricks.reduce((cnt, brick) => brick.destroyed ? cnt : cnt + 1, 0);
-        if (numBricksAlive === 0 && !this.finishing) {
-            this.finishingStart = timestamp;
-            this.finishing = true;
-        }
+    async waitUntilMs(duration, startTimestamp) {
+        return this.repeatUntilMs(() => { }, duration, startTimestamp);
+    }
 
-        if (this.failing) {
-            const timeSinceFailingStart = timestamp - this.failingStart;
-            this.ball.opacity = Math.max(1 - (timeSinceFailingStart) / 500, 0);
-            if (timeSinceFailingStart >= 1000) {
-                this.failing = false;
-                this.ball.opacity = 1;
-                this.ballInMovement = false;
-                this.lives--;
-                if (this.lives < 0) {
-                    alert('Game over!');
-                    if (this.score > this.highScore) {
-                        this.highScore = this.score;
-                        chrome.storage.sync.set({ highScore: this.highScore });
+    async run() {
+        try {
+            this.animateAll();
+
+            while (this.lives >= 0) {
+                await this.waitForClick();
+                this.ballInMovement = true;
+                this.ball.velocity = { x: 0.3, y: 0.3 };
+
+                while (true) {
+                    const timestamp = await this.nextFrame();
+                    if (this.failed()) {
+                        await this.repeatUntilMs(ts => this.ball.opacity = Math.max(1 - ts / 500, 0), 500, timestamp);
+                        await this.waitUntilMs(1000, timestamp);
+                        this.ball.opacity = 1;
+                        this.ballInMovement = false;
+                        this.lives--;
+                        break;
+
+                    } else if (this.levelClear()) {
+                        this.finishing = true;
+                        await this.repeatUntilMs(ts => this.ball.opacity = Math.max(1 - ts / 500, 0), 500, timestamp);
+                        await this.waitUntilMs(1000, timestamp);
+                        this.ball.opacity = 1;
+                        this.ballInMovement = false;
+                        this.nextWeekButton.click();
+                        await this.waitUntilMs(2000, timestamp);
+                        this.initializeStage();
+                        break;
                     }
-                    this.onExit(this);
-                    return;
                 }
             }
-        } else if (this.finishing) {
-            const timeSinceFinishingStart = timestamp - this.finishingStart;
-            if (!this.waitingForStage) {
-                this.ball.opacity = Math.max(1 - (timeSinceFinishingStart) / 500, 0);
-                if (timeSinceFinishingStart >= 1000) {
-                    this.ball.opacity = 1;
-                    this.ballInMovement = false;
-                    this.nextWeekButton.click();
-                    this.waitingForStage = true;
-                    this.waitingForStageStart = timestamp;
-                }
-            } else {
-                const timeSinceWaitingForStage = timestamp - this.waitingForStageStart;
-                if (timeSinceWaitingForStage >= 1000) {
-                    this.initializeStage();
-                    this.waitingForStage = false;
-                    this.finishing = false;
-                }
-            }
-        } else if (this.ball.center.x < this.paddle.center.x) {
-            // this.ballInMovement = false;
-            this.failing = true;
-            this.failingStart = timestamp;
-        }
-        this.statusDisplay.update(this.highScore, this.score, this.lives);
 
-        this.statusDisplay.render();
-        this.paddle.render();
-        this.ball.render();
-        this.lastTimestamp = timestamp;
-        requestAnimationFrame(ts => this.update(ts));
+            alert('Game over!');
+            if (this.score > this.highScore) {
+                this.highScore = this.score;
+                chrome.storage.sync.set({ highScore: this.highScore });
+            }
+            this.onExit(this);
+        } catch (e) {
+            if (!(e instanceof GameUninstalled)) {
+                throw e;
+            }
+        }
+    }
+
+    levelClear() {
+        const numBricksAlive = this.bricks.reduce((cnt, brick) => brick.destroyed ? cnt : cnt + 1, 0);
+        return numBricksAlive === 0;
+    }
+
+    failed() {
+        return this.ball.center.x < this.paddle.center.x;
+    }
+
+    async waitForClick() {
+        this.clicked = false;
+        while (!this.clicked) {
+            await this.nextFrame();
+        }
+    }
+
+    async animateAll(timestamp) {
+        try {
+            let lastTimestamp = await this.nextFrame();
+            while (true) {
+                const timestamp = await this.nextFrame();
+                const timeDelta = timestamp - lastTimestamp;
+                lastTimestamp = timestamp;
+
+                if (this.ballInMovement) {
+                    this.ball.update(timeDelta, [this.paddle, ...this.viewportEdges, ...this.bricks]);
+                } else {
+                    this.ball.center = {
+                        x: this.paddle.center.x + this.paddle.width / 2 + this.ball.radius,
+                        y: this.paddle.center.y + this.paddle.height / 4,
+                    };
+                }
+                this.statusDisplay.update(this.highScore, this.score, this.lives);
+
+                this.statusDisplay.render();
+                this.paddle.render();
+                this.ball.render();
+            }
+        } catch (e) {
+            if (!(e instanceof GameUninstalled)) {
+                throw e;
+            }
+        }
     }
 
     /**
@@ -176,10 +213,7 @@ class Game {
     }
 
     onClick() {
-        if (!this.ballInMovement && !this.finishing) {
-            this.ballInMovement = true;
-            this.ball.velocity = { x: 0.3, y: 0.3 };
-        }
+        this.clicked = true;
     }
 
     onBrickDestroyed(brick) {
@@ -200,6 +234,13 @@ class Game {
             this.gameOverlay.remove();
         }
         this.installed = false;
+    }
+}
+
+class GameUninstalled extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'GameUninstalled';
     }
 }
 
