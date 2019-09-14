@@ -9,6 +9,7 @@ class Game {
         this.finishingStart = null;
         this.waitingForStage = false;
         this.waitingForStageStart = null;
+        this.highScore = 0;
         this.score = 0;
         this.lives = 3;
         this.bricks = [];
@@ -47,6 +48,7 @@ class Game {
         this.installed = true;
 
         this.initializeStage();
+        chrome.storage.sync.get({ highScore: 0 }, ({ highScore }) => this.highScore = highScore);
         requestAnimationFrame(ts => this.update(ts));
     }
 
@@ -67,7 +69,7 @@ class Game {
             this.statusDisplay.uninstall();
         }
         this.statusDisplay = new StatusDisplay(
-            5, 5, 150, this.viewportRect.top - 10, this.paddle.width, this.paddle.height);
+            5, 5, 300, this.viewportRect.top - 10, this.paddle.width, this.paddle.height);
         this.statusDisplay.install(this.gameOverlay);
 
         this.paddle.moveTo(this.viewportRect.left, (this.viewportRect.top + this.viewportRect.bottom) / 2);
@@ -118,6 +120,10 @@ class Game {
                 this.lives--;
                 if (this.lives < 0) {
                     alert('Game over!');
+                    if (this.score > this.highScore) {
+                        this.highScore = this.score;
+                        chrome.storage.sync.set({ highScore: this.highScore });
+                    }
                     this.onExit(this);
                     return;
                 }
@@ -146,7 +152,7 @@ class Game {
             this.failing = true;
             this.failingStart = timestamp;
         }
-        this.statusDisplay.update(this.score, this.lives);
+        this.statusDisplay.update(this.highScore, this.score, this.lives);
 
         this.statusDisplay.render();
         this.paddle.render();
@@ -216,14 +222,14 @@ class StatusDisplay {
             border: '2px solid #888',
             borderRadius: '5px',
             backgroundColor: 'white',
-            fontSize: '50px',
+            fontSize: '30px',
             padding: '10px',
             textAlign: 'right',
         });
         parent.appendChild(this.root);
 
-        this.scoreDisplay = document.createElement('div');
-        this.root.appendChild(this.scoreDisplay);
+        this.highScoreDisplay = this.addLabel('High score:');
+        this.scoreDisplay = this.addLabel('Score:');
 
         this.livesDisplay = document.createElement('div');
         Object.assign(this.livesDisplay.style, {
@@ -235,19 +241,38 @@ class StatusDisplay {
         this.lifeIcons = [];
     }
 
-    update(score, lives) {
+    addLabel(text) {
+        const parent = document.createElement('div');
+        Object.assign(parent.style, {
+            display: 'flex',
+            justifyContent: 'space-between',
+        });
+        this.root.appendChild(parent);
+
+        const label = document.createElement('div');
+        label.textContent = text;
+        parent.appendChild(label);
+
+        const valueElement = document.createElement('div');
+        parent.appendChild(valueElement);
+        return valueElement;
+    }
+
+    update(highScore, score, lives) {
+        this.highScore = highScore;
         this.score = score;
         this.lives = lives;
-        while (this.lifeIcons.length < lives) {
+    }
+
+    render() {
+        this.scoreDisplay.textContent = `${this.score}`;
+        this.highScoreDisplay.textContent = `${this.highScore}`;
+        while (this.lifeIcons.length < this.lives) {
             const icon = createPaddleElement(this.paddleWidth, this.paddleHeight);
             this.lifeIcons.push(icon);
             icon.style.margin = '5px';
             this.livesDisplay.appendChild(icon);
         }
-    }
-
-    render() {
-        this.scoreDisplay.textContent = `${this.score}`;
         this.lifeIcons.forEach((icon, index) => {
             icon.style.display = index < this.lives ? '' : 'none';
         });

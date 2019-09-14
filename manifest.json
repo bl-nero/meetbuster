@@ -4,7 +4,8 @@
     "description": "Too many meetings? No problem!",
     "manifest_version": 2,
     "permissions": [
-        "declarativeContent"
+        "declarativeContent",
+        "storage"
     ],
     "background": {
         "scripts": [
