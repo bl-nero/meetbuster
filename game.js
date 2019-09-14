@@ -35,7 +35,7 @@ class Game {
 
         this.nextWeekButton = document.querySelector('[role=button][aria-label="next week" i]');
         if (!this.nextWeekButton) {
-            throw new Error('I have no memory of this place…');
+            throw new Error('I have no memory of this place… Try switching to a week view.');
         }
 
         this.ball = new Ball(ballRadius);
@@ -56,7 +56,7 @@ class Game {
         const gameViewport = document.querySelector(
             '[data-start-date-key][data-end-date-key]:not([data-disable-all-day-creation])');
         if (!gameViewport) {
-            throw new Error('I have no memory of this place…');
+            throw new Error('I have no memory of this place… Try switching to a week view.');
         }
         this.viewportRect = gameViewport.getBoundingClientRect();
         const paddleLineOffset = Math.min(36, this.viewportRect.x - this.paddle.width / 2);
@@ -187,12 +187,18 @@ class Game {
     }
 
     uninstall() {
-        this.paddle.uninstall();
-        this.ball.uninstall();
+        if (this.paddle) {
+            this.paddle.uninstall();
+        }
+        if (this.ball) {
+            this.ball.uninstall();
+        }
         for (const brick of this.bricks) {
             brick.uninstall();
         }
-        this.gameOverlay.remove();
+        if (this.gameOverlay) {
+            this.gameOverlay.remove();
+        }
         this.installed = false;
     }
 }

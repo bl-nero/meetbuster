@@ -18,6 +18,13 @@ function toggleGame() {
             game.uninstall();
             game = null;
         }
-        game.install();
+        try {
+            game.install();
+        } catch (e) {
+            game.uninstall();
+            game = null;
+            console.error(e);
+            alert(`Error: ${e.message}`);
+        }
     }
 }
