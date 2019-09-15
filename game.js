@@ -23,19 +23,41 @@ class Game {
         const paddleHeight = 50;
 
         this.gameOverlay = document.createElement('div');
-        this.gameOverlay.style.position = 'fixed';
-        this.gameOverlay.style.left = '0px';
-        this.gameOverlay.style.right = '0px';
-        this.gameOverlay.style.top = '0px';
-        this.gameOverlay.style.bottom = '0px';
-        this.gameOverlay.style.zIndex = '1000';
+        Object.assign(this.gameOverlay.style, {
+            position: 'fixed',
+            left: '0px',
+            right: '0px',
+            top: '0px',
+            bottom: '0px',
+            zIndex: '1000',
+        });
         this.gameOverlay.addEventListener('mouseenter', e => this.onMouseUpdate(e));
         this.gameOverlay.addEventListener('mousemove', e => this.onMouseUpdate(e));
         this.gameOverlay.addEventListener('click', e => this.onClick(e));
         document.body.appendChild(this.gameOverlay);
 
+        this.glass1 = document.createElement('div');
+        Object.assign(this.glass1.style, {
+            position: 'absolute',
+            left: '0px',
+            right: '0px',
+            top: '0px',
+            backgroundColor: '#FFFA',
+        });
+        this.gameOverlay.appendChild(this.glass1);
+
+        this.glass2 = document.createElement('div');
+        Object.assign(this.glass2.style, {
+            position: 'absolute',
+            left: '0px',
+            bottom: '0px',
+            backgroundColor: '#FFFA',
+        });
+        this.gameOverlay.appendChild(this.glass2);
+
         this.nextWeekButton = document.querySelector('[role=button][aria-label="next week" i]');
-        if (!this.nextWeekButton) {
+        this.mainDrawerButton = document.querySelector('[role=button][aria-label="main drawer" i]');
+        if (!this.nextWeekButton || !this.mainDrawerButton) {
             throw new Error('I have no memory of this place… Try switching to a week view.');
         }
 
@@ -48,18 +70,22 @@ class Game {
         this.score = 0;
         this.installed = true;
 
-        this.initializeStage();
         chrome.storage.sync.get({ highScore: 0 }, ({ highScore }) => this.highScore = highScore);
     }
 
-    initializeStage() {
+    async initializeStage() {
         const gameViewport = document.querySelector(
             '[data-start-date-key][data-end-date-key]:not([data-disable-all-day-creation])');
         if (!gameViewport) {
             throw new Error('I have no memory of this place… Try switching to a week view.');
         }
         this.viewportRect = gameViewport.getBoundingClientRect();
-        const paddleLineOffset = Math.min(36, this.viewportRect.x - this.paddle.width / 2);
+
+        this.glass1.style.height = `${this.viewportRect.top}px`;
+        this.glass2.style.top = `${this.viewportRect.top}px`;
+        this.glass2.style.width = `${this.viewportRect.left}px`;
+
+        const paddleLineOffset = 80;
         this.viewportRect.x -= paddleLineOffset;
         this.viewportRect.width += paddleLineOffset;
         // Take only top, right, and bottom edge.
@@ -109,6 +135,13 @@ class Game {
 
     async run() {
         try {
+            if (this.mainDrawerButton.getAttribute('aria-expanded') !== 'true') {
+                this.mainDrawerButton.click();
+                const timestamp = await this.nextFrame();
+                await this.waitUntilMs(1000, timestamp);
+            }
+
+            this.initializeStage();
             this.animateAll();
 
             while (this.lives >= 0) {
@@ -481,8 +514,8 @@ class Ball {
     }
 
     render() {
-        this.domElement.style.left = `${this.center.x - this.radius}px`;
-        this.domElement.style.top = `${this.center.y - this.radius}px`;
+        this.domElement.style.transform =
+            `translate(${this.center.x - this.radius}px, ${this.center.y - this.radius}px)`;
         this.domElement.style.opacity = `${this.opacity}`;
     }
 }
@@ -516,8 +549,8 @@ class Paddle {
     }
 
     render() {
-        this.domElement.style.left = `${this.center.x - this.width / 2}px`;
-        this.domElement.style.top = `${this.center.y - this.height / 2}px`;
+        this.domElement.style.transform =
+            `translate(${this.center.x - this.width / 2}px, ${this.center.y - this.height / 2}px)`;
     }
 
     /**
