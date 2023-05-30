@@ -55,7 +55,7 @@ class Game {
         });
         this.gameOverlay.appendChild(this.glass2);
 
-        this.nextWeekButton = document.querySelector('[role=button][aria-label="next week" i]');
+        this.nextWeekButton = document.querySelector('button[aria-label="next week" i]');
         this.mainDrawerButton = document.querySelector('[role=button][aria-label="main drawer" i]');
         if (!this.nextWeekButton || !this.mainDrawerButton) {
             throw new Error('I have no memory of this place… Try switching to a week view.');
