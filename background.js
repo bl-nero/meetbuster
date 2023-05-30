@@ -13,7 +13,7 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 });
 
-chrome.pageAction.onClicked.addListener(() => {
+chrome.action.onClicked.addListener(() => {
     chrome.tabs.query({active: true, currentWindow: true}, tabs => {
         if (tabs.length === 0) {
             return;

@@ -1,5 +1,5 @@
 {
-    "manifest_version": 2,
+    "manifest_version": 3,
     "name": "MeetBuster",
     "version": "1.0.1",
     "author": "Bartosz Leper (bl.nero@gmail.com)",
@@ -11,10 +11,7 @@
         "storage"
     ],
     "background": {
-        "scripts": [
-            "background.js"
-        ],
-        "persistent": false
+        "service_worker": "background.js"
     },
     "content_scripts": [
         {
@@ -30,7 +27,7 @@
             ]
         }
     ],
-    "page_action": {},
+    "action": {},
     "icons": {
         "16": "icon-16.png",
         "48": "icon-48.png",
